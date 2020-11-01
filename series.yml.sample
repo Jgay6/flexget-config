@@ -1,0 +1,13 @@
+series:
+  - DARK (2017):
+      alternate_name:
+        - Dark
+        - DARK
+      identified_by: ep
+      exact: yes
+  - Girls (2012):
+      identified_by: ep
+      exact: yes
+  - The L Word (2004):
+      identified_by: ep
+      exact: yes

@@ -1,0 +1,1484 @@
+variables: variables.yml
+
+templates:
+  transmission-settings:
+    _transmission-primary: &transmission-primary
+      host: '{? torrent.primary.host ?}'
+      port: '{? torrent.primary.port ?}'
+      username: '{? torrent.primary.username ?}'
+      password: '{? torrent.primary.password ?}'
+    _transmission-secondary: &transmission-secondary
+      host: '{? torrent.secondary.host ?}'
+      port: '{? torrent.secondary.port ?}'
+      username: '{? torrent.secondary.username ?}'
+      password: '{? torrent.secondary.password ?}'
+  kodi-settings:
+    _kodi-primary: &kodi-primary
+      url: '{? kodi.url ?}'
+      port: '{? kodi.port ?}'
+      username: '{? kodi.username ?}'
+      password: '{? kodi.password ?}'
+  transmission-movies:
+    transmission:
+      <<: *transmission-primary
+      path: '{? paths.torrent ?}/movies/general'
+      add_paused: no
+      main_file_only: yes
+      rename_like_files: yes
+      magnetization_timeout: 120
+      content_filename: "{{ movie_name }} ({{ movie_year }}){% if quality|default(False) %}{% set screen_size, format, video_codec, audio_codec = screen_size|default(quality.resolution), format|default(quality.source), video_codec|default(quality.codec), audio_codec|default(quality.audio) %}{% endif %}{% if screen_size|default(False) %}[{{ screen_size }}]{% endif %}{% if format|default(False) %}.{{format|capitalize}}{% endif %}{% if video_codec|default(False) %}.{{video_codec}}{% endif %}{% if audio_codec|default(False) %}.{{audio_codec|upper}}{% endif %}"
+      include_subs: yes
+      skip_files:
+        - '*.nfo'
+        - '*.sfv'
+        - '*[sS]ample*'
+        - '*.txt'
+        - '*.lnk'
+  transmission-purge:
+    disable: [seen, seen_info_hash]
+    regexp:
+      reject_excluding:
+        - /+(downloads|Torrents)/+(anime|movies|series)
+      from: transmission_downloadDir
+  common-reject:
+    regexp:
+      reject:
+        - \b(ita|ger|spa|swe|nor|nordic|kor|esp|nl|pl|french|casteñano|spanish|hindi)\b # Languages
+        - \b(un|hard)sub|sub(bed|titulado)\b # Subtitles (hardsub / Subbed / Subtitulado / Unsubbed) allow Subs|Sub
+        - \b(dub|_dub|dubbed)\b
+        - \b60fps\b
+        - \bpv\b
+        - \bdublat\n
+        - \bVOSTFR\b
+        - \bHC\b
+        - 1XBET
+        - PCTRELOAD
+        - ganool
+      from: title
+  common-sort:
+    max_reruns: 1
+    sort_by:
+      - field: torrent_availability
+        reverse: yes
+      - field: quality
+        reverse: yes
+  common-filter:
+    convert_magnet:
+      timeout: 180 seconds
+    #magnets: no
+    content_filter:
+      require:
+        - '*.avi'
+        - '*.mkv'
+        - '*.mp4'
+      reject: '*.lnk'
+  common-urlrewrite:
+    urlrewrite:
+      #torrentz2:
+      #  regexp: 'https?://torrentz2.eu/(?P<id>\w+)'
+      #  format: 'magnet:?xt=urn:btih:\g<id>'
+      itorrents:
+        regexp: 'https?://itorrents.org/torrent/(?P<id>\w+)\.torrent.*'
+        format: 'magnet:?xt=urn:btih:\g<id>'
+      torrentdownload:
+        regexp: 'https?://www.torrentdownload.info/.*/(?P<id>\w+)'
+        format: 'magnet:?xt=urn:btih:\g<id>'
+  lookup-movies:
+    trakt_lookup: yes
+    imdb_lookup: yes
+    tmdb_lookup: yes
+    parsing:
+      movie: guessit
+  copy-movies:
+    content_size:
+      min: 275
+    if:
+      - "movie_name is undefined or movie_name is none": fail
+      - "'spanish' in location":
+          set:
+            category: "spanish"
+      - "'anime' in location or 'anime' in trakt_genres|default([])":
+          set:
+            category: "anime"
+    require_field:
+      - movie_name
+      - movie_year
+    exists_movie:
+      path: '{? paths.movies ?}'
+      allow_different_qualities: better
+      type: files
+    copy:
+      to: "{? paths.movies ?}/{{ category|default('general')|capitalize }}/{{ trakt_movie_name|default(movie_name) }} ({{ movie_year }})"
+      rename: "{{ trakt_movie_name|default(movie_name) }} ({{ movie_year }}){% if quality|default(False) %}{% set screen_size, format, video_codec, audio_codec = screen_size|default(quality.resolution), format|default(quality.source), video_codec|default(quality.codec), audio_codec|default(quality.audio) %}{% endif %}{% if screen_size|default(False) %}[{{ screen_size }}]{% endif %}{% if format|default(False) %}.{{format|capitalize}}{% endif %}{% if video_codec|default(False) %}.{{video_codec}}{% endif %}{% if audio_codec|default(False) %}.{{audio_codec|upper}}{% endif %}"
+      allow_dir: yes
+      along:
+        subdirs:
+          - Sub
+          - Subs
+          - Extra
+          - Extras
+        extensions:
+          - srt
+  download-movies:
+    # seen_movies:
+    #   matching: loose
+    #   scope: local
+    proper_movies: 4 weeks
+    domain_delay:
+      torrentz2: 5 seconds
+      zooqle: 5 seconds
+      thepiratebay: 5 seconds
+      limetorrents: 5 seconds
+    torrent_alive: 2 # Will reject results with less than 2 seeds
+    content_size:
+      min: 300
+      max: 9500
+  subtitles-movies:
+    list_add:
+      - subtitle_list:
+          list: subtitles-movies
+          check_subtitles: yes
+          remove_after: 7 days
+          languages:
+            - es
+            - en
+  manipulate-anime:
+    manipulate:
+      - title:
+          replace:
+            regexp: '[^a-zA-Z0-9\-~_.()\[\]\s]' # remove kanji to better parsing
+            format: ''
+      - title:
+          replace:
+            regexp: '([a-zA-Z]+)\s+?-\s+?([a-zA-Z]+)'
+            format: '\1 \2'
+      - title:
+          replace:
+            regexp: 'Season\s?(\d{2,3})\s-?\s?(\d{2,3})'
+            format: 'S\1E\2'
+      - title:
+          replace:
+            regexp: 'S(\d{2,3})-?E(\d{2,3})'
+            format: 'S\1E\2'
+      - title:
+          replace:
+            regexp: '\sTV\s|--+'
+            format: '-'
+  kodi-update:
+    kodi_library:
+      <<: *kodi-primary
+      action: scan
+      category: video
+  kodi-clean:
+    kodi_library:
+      <<: *kodi-primary
+      action: clean
+      category: video
+  notify-all:
+    notify:
+      entries:
+        title: '*Task:* {{task}} | {{title}}'
+        message: |
+          {%- if trakt_series_name is defined or series_name is defined %}
+          *Starting to donwload serie:* {{trakt_series_name|d(series_name)}} - {{trakt_ep_id|d(series_id)}}
+          *Season:* {{trakt_season|d(series_season)}}
+          *Episode:* {{trakt_episode|d(series_id)}}
+          *Name:* {{trakt_ep_name|d('N/A')}}
+          {%- elif movie_name is defined %}
+          *Starting to download movie:* {{ movie_name }} ({{ movie_year|d('--') }})
+          {%- else %}
+          *Title:* {{title}}
+          {%- endif %}
+          *Quality:* {{quality|d('')}}
+          {%- if trakt_rating is defined and trakt_rating %}
+          *Score trakt:* {{trakt_rating}}/10 - {{trakt_votes|d('-')}} votes
+          {%- endif %}
+          {%- if tmdb_rating is defined and tmdb_rating %}
+          *Score tmdb:* {{tmdb_rating}}/10 - {{tmdb_votes|d('-')}} votes
+          {%- endif %}
+          {%- if imdb_id is defined %}
+          {%- if imdb_score is defined and imdb_score %}
+          *Score imdb:* {{imdb_score}}/10 - {{imdb_votes|d('-')}} votes
+          {%- endif %}
+          *Genres:* {{imdb_genres|join(', ')|title if imdb_genres is defined and imdb_genres else '-'}}
+          *Directors:* {{imdb_directors.values()|join(', ')|title if imdb_directors is defined and imdb_directors else '-'}}
+          {%- endif %}
+          {%- if trakt_series_url is defined %}
+          *Url:* {{trakt_series_url}}
+          {%- elif imdb_url is defined %}
+          *Url:* {{imdb_url}}
+          {%- endif %}
+          {%- if trakt_overview is defined %}
+          *Plot:*
+          {%- if trakt_translations is defined and trakt_translations and 'es' in trakt_translations %}
+          _[Español]_ {{trakt_translations.es.overview}}
+          -----------
+          {%- endif %}
+          _[English]_ {{trakt_overview|d(imdb_plot_outline|d(''))}}
+          {%- endif %}
+          {%- if trakt_trailer is defined %}
+          -----------
+          [Trailer:]({{trakt_trailer}})
+          {%- endif %}
+        via:
+          - xmpp:
+              sender: '{? xmpp.sender ?}'
+              password: '{? xmpp.password ?}'
+              recipients: '{? xmpp.recipients ?}'
+          - telegram:
+              bot_token: '{? telegram.token ?}'
+              parse_mode: markdown
+              disable_previews: no
+              recipients: '{? telegram.recipients ?}'
+
+tasks:
+  collection-movies:
+    priority: 1
+    inputs:
+      - trakt_list:
+          username: '{? accounts.trakt_primary.username ?}'
+          list: collection
+          type: movies
+      - trakt_list:
+          username: '{? accounts.trakt_secondary.username ?}'
+          list: collection
+          type: movies
+    accept_all: yes
+    seen: local  # We don't want accepted movies on this feed to affect actual download feed
+    list_add:
+      - movie_list: watchlist_movies
+
+  # taska to pull movies from trakt.tv and add to the movie list
+  watchlist-movies:
+    priority: 1
+    inputs:
+      - trakt_list:
+          username: '{? accounts.trakt_primary.username ?}'
+          list: watchlist
+          type: movies
+      - trakt_list:
+          username: '{? accounts.trakt_secondary.username ?}'
+          list: watchlist
+          type: movies
+    accept_all: yes
+    seen: local  # We don't want accepted movies on this feed to affect actual download feed
+    list_add:
+      - movie_list: watchlist_movies
+
+  watchlist-movies-anime:
+    priority: 1
+    tmdb_lookup: yes
+    imdb_lookup: yes
+    inputs:
+      - my_anime_list:
+          username: '{? accounts.myanimelist_primary.username ?}'
+          status:
+            - watching
+            - plan_to_watch
+          airing_status:
+            - airing
+            - planned
+            - finished
+          type: movie
+      - kitsu:
+          username: '{? accounts.kitsu_primary.username ?}'
+          lists:
+            - current
+            - planned
+          type:
+            - movie
+      # - anidb_list:
+      #     user_id: '{? accounts.anidb_primary.username ?}'
+      #     type: movies
+      #     mode: get
+    accept_all: yes
+    seen: local  # We don't want accepted movies on this feed to affect actual download feed
+    list_add:
+      - movie_list: watchlist_movies_anime
+
+  watchlist-movies-spanish:
+    priority: 1
+    inputs:
+      - trakt_list:
+          username: '{? accounts.trakt_primary.username ?}'
+          list: spanish
+          type: movies
+      - trakt_list:
+          username: '{? accounts.trakt_secondary.username ?}'
+          list: spanish
+          type: movies
+      - trakt_list:
+          username: '{? accounts.trakt_secondary.username ?}'
+          list: watchlist
+          type: movies
+    accept_all: yes
+    seen: local  # We don't want accepted movies on this feed to affect actual download feed
+    list_add:
+      - movie_list: watchlist_movies_spanish
+
+  watchlist-movies-spanish-force:
+    priority: 1
+    inputs:
+      - trakt_list:
+          username: '{? accounts.trakt_secondary.username ?}'
+          list: spanish
+          type: movies
+          language: es
+      - trakt_list:
+          username: '{? accounts.trakt_primary.username ?}'
+          list: spanish
+          type: movies
+          language: es
+      - trakt_list:
+          username: '{? accounts.trakt_secondary.username ?}'
+          list: watchlist
+          type: movies
+          language: es
+    accept_all: yes
+    seen: local  # We don't want accepted movies on this feed to affect actual download feed
+    list_add:
+      - movie_list: watchlist_movies_spanish_force
+
+  # tasks to pull series lists
+  watchlist-series:
+    priority: 1
+    inputs:
+      - trakt_list:
+          username: '{? accounts.trakt_secondary.username ?}'
+          list: watchlist
+          type: shows
+      - trakt_list:
+          username: '{? accounts.trakt_primary.username ?}'
+          list: watchlist
+          type: shows
+      - trakt_list:
+          username: '{? accounts.trakt_primary.username ?}'
+          list: series
+          type: shows
+    accept_all: yes
+    seen: local  # We don't want accepted movies on this feed to affect actual download feed
+    set_series_begin: yes
+    list_add:
+      - entry_list: watchlist_series
+
+  watchlist-series-anime:
+    priority: 1
+    inputs:
+      - my_anime_list:
+          username: '{? accounts.myanimelist_primary.username ?}'
+          status:
+            - watching
+            - plan_to_watch
+          airing_status:
+            - airing
+            - planned
+            - finished
+          type: tv
+      - my_anime_list:
+          username: '{? accounts.myanimelist_primary.username ?}'
+          status:
+            - watching
+            - plan_to_watch
+          airing_status:
+            - airing
+            - planned
+            - finished
+          type: ova
+      # - anidb_list:
+      #     user_id: '{? accounts.anidb_primary.username ?}'
+      #     type: shows
+      #     mode: get
+    accept_all: yes
+    set_series_begin: yes
+    seen: local  # We don't want accepted movies on this feed to affect actual download feed
+    list_add:
+      - entry_list: watchlist_series_anime
+
+  watchlist-series-spanish:
+    priority: 1
+    inputs:
+      - trakt_list:
+          username: '{? accounts.trakt_secondary.username ?}'
+          list: spanish
+          type: shows
+      - trakt_list:
+          username: '{? accounts.trakt_primary.username ?}'
+          list: spanish
+          type: shows
+    accept_all: yes
+    seen: local  # We don't want accepted movies on this feed to affect actual download feed
+    set_series_begin: yes
+    list_add:
+      - entry_list: watchlist_series_spanish
+
+  # task to copy finished movies
+  copy-movies:
+    priority: 2
+    template:
+      - lookup-movies
+      - copy-movies
+      - subtitles-movies
+      - kodi-update
+    metainfo_movie: yes
+    accept_all: yes
+    seen: local
+    filesystem:
+      path:
+        - '{? paths.torrent ?}/movies'
+        - '{? paths.torrent ?}/remote/movies'
+      regexp: '.*\.(avi|mkv|mp4)$'
+      recursive: yes
+    digest:
+      list: copy_movies_fallback
+      state:
+        - failed
+
+  copy-movies-fallback:
+    priority: 3
+    template:
+      - copy-movies
+      - subtitles-movies
+      - kodi-update
+    metainfo_movie: yes
+    trakt_lookup: yes
+    imdb_lookup: yes
+    tmdb_lookup: yes
+    parsing:
+      movie: internal
+    retry_failed: no
+    from_digest:
+      list: copy_movies_fallback
+    accept_all: yes
+    seen: local
+
+  # task to copy finished series
+  copy-series:
+    priority: 2
+    template:
+      - kodi-update
+    metainfo_series: yes
+    trakt_lookup: yes
+    parsing:
+      series: guessit
+    accept_all: yes
+    seen: local
+    filesystem:
+      path:
+        - '{? paths.torrent ?}/series/general'
+        - '{? paths.torrent ?}/remote/series/general'
+      regexp: '.*\.(avi|mkv|mp4)$'
+      recursive: yes
+    content_size:
+      min: 20
+    require_field:
+      - series_id
+      - series_name
+      - series_season
+    exists_series:
+      path: "{? paths.general_series ?}/{{ trakt_series_name|default(series_name)|title }}/Season {{ trakt_season|default(series_season) }}"
+      allow_different_qualities: better
+    copy:
+      to: "{? paths.general_series ?}/{{ trakt_series_name|default(series_name)|title }}/Season {{ trakt_season|default(series_season)  }}"
+      rename: "{{ trakt_series_name|default(series_name)|title }} {{ trakt_ep_id|default(series_id) }}{%if trakt_ep_name|default(False) %}-{{ trakt_ep_name }}{% endif %}{% if quality|default(False) %}{% set screen_size, format, video_codec, audio_codec = screen_size|default(quality.resolution), format|default(quality.source), video_codec|default(quality.codec), audio_codec|default(quality.audio) %}{% endif %}{% if screen_size|default(False) %}[{{ screen_size }}]{% endif %}{% if format|default(False) %}.{{format|capitalize}}{% endif %}{% if video_codec|default(False) %}.{{video_codec}}{% endif %}{% if audio_codec|default(False) %}.{{audio_codec|upper}}{% endif %}"
+      allow_dir: yes
+      along:
+        subdirs:
+          - Sub
+          - Subs
+          - subs
+          - sub
+          - Subs/
+          - Sub/
+          - Extra
+          - Extras
+        extensions:
+          - srt
+    digest:
+      list: purge_series
+      state:
+        - rejected
+    list_add:
+      - subtitle_list:
+          list: subtitles-series
+          remove_after: 7 days
+          allow_dir: true
+          recursion_depth: 2
+          languages:
+            - es
+            - en
+
+  # task to copy finished anime series
+  copy-series-anime:
+    priority: 2
+    template:
+      - manipulate-anime
+      - kodi-update
+    metainfo_series: yes
+    thetvdb_lookup: yes
+    parsing:
+      series: guessit
+    accept_all: yes
+    seen: local
+    filesystem:
+      path:
+        - '{? paths.torrent ?}/series/anime'
+        - '{? paths.torrent ?}/remote/series/anime'
+      regexp: '.*\.(avi|mkv|mp4)$'
+      recursive: yes
+    if:
+      - "series_parser is defined and series_parser.season > 1":
+          set:
+            anime_season: '{{series_parser.season}}'
+            anime_episode: '{{series_parser.season}} EP{{series_id}}'
+    content_size:
+      min: 20
+    require_field:
+      - series_id
+      - series_name
+    exists_series:
+      path: "{? paths.anime_series ?}/{{ tvdb_series_name|default(series_name)|title }}{%if anime_season|default(False) %} {{ anime_season }}{% endif %}"
+      allow_different_qualities: better
+    copy:
+      to: "{? paths.anime_series ?}/{{ tvdb_series_name|default(series_name)|title }}{%if anime_season|default(False) %} {{ anime_season }}{% endif %}"
+      rename: "{{ tvdb_series_name|default(series_name)|title }} {%if tvdb_ep_id|default(False) %}{{ tvdb_ep_id|upper }}{% elif series_id is number %}{{ anime_episode|default(\"EP\" ~ series_id) }}{% else %}{{ series_id|upper }}{% endif %}{%if tvdb_ep_name|default(False) %}-{{ tvdb_ep_name }}{% endif %}{% if quality|default(False) %}{% set screen_size, format, video_codec, audio_codec = screen_size|default(quality.resolution), format|default(quality.source), video_codec|default(quality.codec), audio_codec|default(quality.audio) %}{% endif %}{% if screen_size|default(False) %}[{{ screen_size }}]{% endif %}{% if format|default(False) %}.{{format|capitalize}}{% endif %}{% if video_codec|default(False) %}.{{video_codec}}{% endif %}{% if audio_codec|default(False) %}.{{audio_codec|upper}}{% endif %}"
+      allow_dir: yes
+      along:
+        subdirs:
+          - Sub
+          - Subs
+          - Extra
+          - Extras
+        extensions:
+          - srt
+    list_add:
+      - subtitle_list:
+          list: subtitles-series
+          remove_after: 7 days
+          languages:
+            - es
+            - en
+
+  # task that automatically downloads movies from the movie_list
+  download-movies:
+    priority: 10
+    template:
+      - lookup-movies
+      - common-sort
+      - common-filter
+      - common-reject
+      - common-urlrewrite
+      - download-movies
+      - transmission-movies
+      - notify-all
+    discover:
+      what:
+        - movie_list: watchlist_movies
+      from:
+        - 1337x:
+            order_by: seeders
+        - piratebay:
+            category: highres movies
+            sort_by: seeds
+        - piratebay:
+            category: movies
+            sort_by: seeds
+        - rarbg:
+            category: x264 720p
+            sorted_by: seeders
+        - yts: yes
+        - argenteam:
+            force_subtitles: no
+        #- torrentleech:
+        #    rss_key: '{? accounts.torrentleech.key ?}'
+        #    username: '{? accounts.torrentleech.username ?}'
+        #    password: '{? accounts.torrentleech.password ?}'
+      interval: 2 hours
+      release_estimations: ignore
+    best_quality:
+      on_best: do_nothing
+      on_lower: reject
+    quality: hr-720p webrip+ !h265 !10bit !dts !dtshd
+    upgrade:
+      target: 720p webdl+ !h265 !10bit !dts !dtshd
+      tracking: yes
+      timeframe: 8 weeks
+      on_lower: reject
+      propers: yes
+    list_match:
+      from:
+        - movie_list: watchlist_movies
+    require_field:
+      - movie_name
+      - movie_year
+    list_add:
+      - entry_list: downloaded_movies
+
+  download-movies-anime:
+    priority: 10
+    template:
+      - common-sort
+      - common-filter
+      - common-reject
+      - common-urlrewrite
+      - download-movies
+      - transmission-movies
+      - notify-all
+    trakt_lookup: yes
+    imdb_lookup: yes
+    tmdb_lookup: yes
+    parsing:
+      movie: guessit
+    domain_delay:
+      nyaa: 20 seconds
+    discover:
+      what:
+        - movie_list:
+            list_name: watchlist_movies_anime
+            strip_year: yes
+      from:
+        - horriblesubs: yes
+        - nyaa:
+            category: anime raw
+            filter: filter remakes
+        - nyaa:
+            category: anime eng
+            filter: filter remakes
+        - 1337x:
+            order_by: seeders
+        - limetorrents:
+            category: anime
+            order_by: seeds
+        #- torrentleech:
+        #    rss_key: '{? accounts.torrentleech.key ?}'
+        #    username: '{? accounts.torrentleech.username ?}'
+        #    password: '{? accounts.torrentleech.password ?}'
+        #    category: 34
+      interval: 2 hours
+      release_estimations: ignore
+    manipulate:
+      - title:
+          replace:
+            regexp: '[^a-zA-Z0-9\-_.()\[\]\s]' # remove kanji
+            format: ''
+    best_quality:
+      on_best: do_nothing
+      on_lower: reject
+    content_size:
+      min: 300
+      max: 3500
+    quality:
+      - dvdrip
+      - hr-720p webrip+ !h265 !10bit !dts !dtshd
+      - hr-1080p !cam !ts !bdscr !dvdscr !h265 !10bit !dts !dtshd
+    upgrade:
+      target: 1080p webdl+ !h265 !10bit !dts !dtshd
+      tracking: yes
+      timeframe: 8 weeks
+      on_lower: reject
+      propers: yes
+    list_match:
+      from:
+        - movie_list: watchlist_movies_anime
+    require_field:
+      - movie_name
+      - movie_year
+    set:
+      path: '{? paths.torrent ?}/movies/anime'
+    list_add:
+      - entry_list: downloaded_movies
+    list_remove:
+      - trakt_list:
+          username: '{? accounts.trakt_primary.username ?}'
+          list: anime
+          type: movies
+
+  # task that automatically downloads movies in spanish
+  download-movies-spanish:
+    priority: 10
+    template:
+      - lookup-movies
+      - common-sort
+      - common-filter
+      - common-urlrewrite
+      - download-movies
+      - transmission-movies
+      - notify-all
+    discover:
+      what:
+        - movie_list: watchlist_movies_spanish
+        - movie_list: watchlist_movies_spanish_force
+      from:
+        - torrentz:
+           reputation: good
+           extra_terms: lat
+        - torrentz:
+            reputation: good
+            extra_terms: latino
+        - argenteam:
+            force_subtitles: no
+        #- torrentleech:
+        #    rss_key: '{? accounts.torrentleech.key ?}'
+        #    username: '{? accounts.torrentleech.username ?}'
+        #    password: '{? accounts.torrentleech.password ?}'
+        - search_rss:
+            url: 'https://zooqle.com/search?q={{ search_term }}+lat&fmt=rss'
+            link: 'auto'
+        - search_rss:
+            url: 'https://zooqle.com/search?q={{ search_term }}+latino&fmt=rss'
+            link: 'auto'
+        # TODO: custom plugins for torrentdownloads/cinecalidad and elitetorrent.nl
+        #- search_rss:
+        #    url: 'https://www.torrentdownloads.me/rss.xml?type=search&search={{ search_term }}+lat'
+        #    link: 'info_hash'
+        #- search_rss:
+        #    url: 'https://www.torrentdownloads.me/rss.xml?type=search&search={{ search_term }}+latino'
+        #    link: 'info_hash'
+        - search_rss:
+            url: 'https://www.torrentdownload.info/feed?q={{search_term}}+lat'
+            link: 'auto'
+        - search_rss:
+            url: 'https://www.torrentdownload.info/feed?q={{search_term}}+latino'
+            link: 'auto'
+        - search_rss:
+            url: 'https://www.limetorrents.info/searchrss/{{search_term}}+lat'
+            link: 'auto'
+        - search_rss:
+            url: 'https://www.limetorrents.info/searchrss/{{search_term}}+latino'
+            link: 'auto'
+      interval: 2 hours
+      release_estimations: ignore
+    quality:
+      - dvdrip+ !h265 !10bit !dts !dtshd
+      - 480p-1080p !hdrip !cam !ts !bdscr !dvdscr !h265 !10bit !dts !dtshd
+      - 720p+ webrip+ !h265 !10bit !dts !dtshd
+    best_quality:
+      on_best: do_nothing
+      on_lower: reject
+    upgrade:
+      target: 1080p webdl+ !h265 !10bit !dts !dtshd
+      tracking: yes
+      timeframe: 8 weeks
+      on_lower: reject
+      propers: yes
+    regexp:
+      reject_excluding:
+        - .lat|-lat-|latino|latin|dual-lat|dual.lat|dual-latino|spa-lat|spa-latino|spanish-latino|esp-lat|esp-latino|esp.lat|spa.lat
+      reject:
+        - \bdublat\n
+        - \bVOSTFR\b
+        - \bHC\b
+        - 1XBET
+        - PCTRELOAD
+        - ganool
+      from:
+        - title
+    list_match:
+      from:
+        - movie_list: watchlist_movies_spanish
+        - movie_list: watchlist_movies_spanish_force
+    require_field:
+      - movie_name
+      - movie_year
+    set:
+      path: '{? paths.torrent ?}/movies/spanish'
+    digest:
+      list: clean_watchlist_spanish
+      state:
+        - accepted
+    list_add:
+      - entry_list: downloaded_movies
+    list_remove:
+      - trakt_list:
+          username: '{? accounts.trakt_secondary.username ?}'
+          list: spanish
+          type: movies
+      - trakt_list:
+          username: '{? accounts.trakt_primary.username ?}'
+          list: spanish
+          type: movies
+
+  # task that automatically downloads series from the entry_list
+  download-series:
+    priority: 10
+    template:
+      - common-sort
+      - common-filter
+      - common-reject
+      - common-urlrewrite
+      - notify-all
+    trakt_lookup: yes
+    thetvdb_lookup: yes
+    parsing:
+      series: guessit
+    domain_delay:
+      1337x: 10 seconds
+      thepiratebay: 10 seconds
+    discover:
+      what:
+        - next_series_episodes:
+            from_start: yes
+            backfill: yes
+      from:
+        - 1337x:
+            order_by: seeders
+        - rarbg:
+            category: 
+              - x264 720p
+              - HDTV
+              - SDTV
+            sorted_by: seeders
+        # - rarbg:
+        #     category: 
+        #       - x264 720p
+        #       - HDTV
+        #       - SDTV
+        #     sorted_by: seeders
+        #     use_tvdb: yes
+        - piratebay:
+            category: highres tv
+            sort_by: seeds
+        - piratebay:
+            category: tv
+            sort_by: seeds
+        - yts: yes
+        - limetorrents:
+            category: tv
+            order_by: seeds
+      interval: 2 hours
+      #release_estimations: ignore
+      release_estimations:
+        optimistic: 90 days
+    torrent_alive: 4 # Will reject results with less than 2 seeds
+    content_size:
+      min: 20
+      max: 7500
+    include: series.yml
+    configure_series:
+      from:
+        entry_list: watchlist_series
+      settings:
+        identified_by: ep
+        timeframe: 48 hours
+        target: 720p hdtv+ !h265 !10bit !dts !dtshd !dd5.1 !dd+5.1
+        quality: webrip+ !h265 !10bit !dts !dtshd !dd5.1 !dd+5.1
+        tracking: backfill
+        upgrade: yes
+        specials: yes
+        exact: yes
+        season_packs: always
+    require_field:
+      - trakt_series_name
+      - trakt_ep_id
+    transmission:
+      <<: *transmission-secondary
+      path: '{? paths.torrent_remote ?}/series/general'
+      add_paused: no
+      main_file_only: yes
+      rename_like_files: yes
+      magnetization_timeout: 120
+      content_filename: "{{ trakt_series_name }} {{ trakt_ep_id }}{%if trakt_ep_name|default(False) %}-{{trakt_ep_name}}{% endif %}{% if quality|default(False) %}{% set screen_size, format, video_codec, audio_codec = screen_size|default(quality.resolution), format|default(quality.source), video_codec|default(quality.codec), audio_codec|default(quality.audio) %}{% endif %}{% if screen_size|default(False) %}[{{ screen_size }}]{% endif %}{% if format|default(False) %}.{{format|capitalize}}{% endif %}{% if video_codec|default(False) %}.{{video_codec}}{% endif %}{% if audio_codec|default(False) %}.{{audio_codec|upper}}{% endif %}"
+      include_subs: yes
+      skip_files:
+        - '*.nfo'
+        - '*.sfv'
+        - '*[sS]ample*'
+        - '*.txt'
+        - '*.lnk'
+
+  # task that automatically downloads series anime from the entry_list
+  download-series-anime:
+    priority: 10
+    template:
+      - common-sort
+      - common-filter
+      - common-reject
+      - common-urlrewrite
+      - manipulate-anime
+      - notify-all
+    metainfo_series: yes
+    thetvdb_lookup: yes
+    parsing:
+      series: guessit
+    domain_delay:
+      nyaa: 20 seconds
+    discover:
+      what:
+        - next_series_episodes: yes
+          # backfill: yes -> has error with sequence (without season) anime
+      from:
+        - horriblesubs: yes
+        - nyaa:
+            category: anime raw
+            filter: filter remakes
+        - nyaa:
+            category: anime eng
+            filter: filter remakes
+      interval: 2 hours
+      release_estimations: ignore
+    torrent_alive: 4 # Will reject results with less than 2 seeds
+    regexp:
+      reject:
+        - \d\d\s?~\s?\d\d+ # Ignore packs due in sequence is not soported
+        - \d\d\-\d\d+
+        - vol(\s|.)?\d+\s?-\s?vol
+        - \bvol(\s|.)?\d+\b
+        - \b(ita|ger|spa|swe|nor|nordic|kor|esp|nl|pl|french|casteñano|spanish|hindi)\b # Languages
+        - \b(un|hard)sub|sub(bed|titulado)\b # Subtitles (hardsub / Subbed / Subtitulado / Unsubbed) allow Subs|Sub
+        - \b(dub|_dub|dubbed)\b
+        - \bdub|_dub|dubbed\b
+        - dub|_dub|dubbed
+        - \b60fps\b
+        - \bs(\d+)\s\b
+        - \bpv\b
+        - dublat
+        - \bVOSTFR\b
+        - 1XBET
+        - ganool  
+      from: title
+    content_size:
+      min: 20
+      max: 75000
+    include: anime.yml
+    configure_series:
+      from:
+        entry_list: watchlist_series_anime
+      settings:
+        identified_by: sequence
+        sequence_regexp: '(\d{2,3})(?:v(?P<version>\d))?'
+        timeframe: 72 hours
+        target: hr-720p hdtv+ !h265 !10bit !dts !dtshd
+        qualities: 
+          - dvdrip !h265 !10bit !dts !dtshd
+          - 480p-720p webrip+ !h265 !10bit <=flac
+          - 480p-720p !cam !ts !bdscr !dvdscr !h265 !10bit !dts !dtshd
+          - webrip+ !h265 !10bit !dts !dtshd
+        upgrade: yes
+        tracking: yes
+        specials: yes
+        begin: 01
+        exact: yes
+        season_packs: no
+        special_ids:
+          - OVA
+    require_field:
+      - series_id
+      - series_name
+    transmission:
+      <<: *transmission-secondary
+      path: '{? paths.torrent_remote ?}/series/anime'
+      add_paused: no
+      main_file_only: no
+      magnetization_timeout: 120
+      include_subs: yes
+      skip_files:
+        - '*.nfo'
+        - '*.sfv'
+        - '*[sS]ample*'
+        - '*.txt'
+        - '*.lnk'
+
+  # Task to get subtitles
+  subtitles-add:
+    priority: 1
+    manual: yes
+    template:
+      - notify-all
+    filesystem:
+      path:
+        - '{? paths.movies ?}'
+        - '{? paths.series ?}'
+      regexp: '.*\.(avi|mkv|mp4)$'
+      recursive: yes
+    age:
+      field: modified
+      action: reject
+      age: 7 days
+    seen: local # seen shouldn't interfer with anything outside this subtitles task
+    check_subtitles: yes
+    if:
+      - "not subtitles or ('es' not in subtitles and 'spa' not in subtitles)": accept
+    list_add:
+      - subtitle_list:
+          list: subtitles-all
+          remove_after: 7 days
+          languages:
+            - es
+            - en
+        
+  subtitles-get:
+    priority: 1
+    seen: no
+    inputs:
+      - subtitle_list:
+          list: subtitles-series
+      - subtitle_list:
+          list: subtitles-movies
+      - subtitle_list:
+          list: subtitles-all
+    list_match:
+      from:
+        - subtitle_list:
+            list: subtitles-series
+        - subtitle_list:
+            list: subtitles-movies
+        - subtitle_list:
+            list: subtitles-all
+    subliminal:
+      languages:
+        - es
+        - en
+      exact_match: yes
+      single: no
+      authentication:
+        opensubtitles:
+          username: '{? accounts.opensubtitles.username ?}'
+          password: '{? accounts.opensubtitles.password ?}'
+
+  filter-duplicate-movies:
+    priority: 15
+    seen: no # Too keep looking duplicates for same movie
+    metainfo_movie: yes
+    filesystem:
+      path:
+        - '{? paths.movies ?}'
+      regexp: '.*\.(avi|mkv|mp4)$'
+      recursive: yes
+      retrieve: files
+    sequence:
+      - manipulate:
+          - title:
+              phase: filter
+              from: location
+      - sort_by: id
+      - duplicates:
+          field: id
+          action: accept
+      - set:
+          duplicate_reason: "{{reason}}"
+      - best_quality:
+          on_best: reject
+          on_lower: accept
+    list_match: # Check is already added to avoid notification noise 
+      from:
+        - entry_list: duplicate_movies_added
+      action: reject
+      remove_on_match: no
+      single_match: no
+    list_add:
+      - pending_list: duplicate_movies
+      - entry_list: duplicate_movies_added
+    notify:
+      entries:
+        title: '* Duplicate Movies: {{movie_name|default(title)}} ({{movie_year|default("--")}})'
+        message: |
+          Task: {{task}}
+          Id: {{id|default(title)}}
+          Filename: {{filename}} 
+          Location: {{location}}
+          Reason: {{duplicate_reason|default(reason)}}
+          Status: Pending approve
+        via:
+          - xmpp:
+              sender: '{? xmpp.sender ?}'
+              password: '{? xmpp.password ?}'
+              recipients: '{? xmpp.recipients ?}'
+
+  filter-remove-movies:
+    priority: 15
+    seen: no # Too keep looking to remove for same movie
+    filesystem:
+      path:
+        - '{? paths.movies ?}'
+      regexp: '.*\.(avi|mkv|mp4)$'
+      recursive: yes
+      retrieve: files
+    age:
+      field: modified
+      action: accept
+      age: 1000 days # TODO: change after first run
+    trakt_lookup:
+      username: '{? accounts.trakt_primary.username ?}'
+      account: '{? accounts.trakt_primary.username ?}'
+    if:
+      - trakt_collected: reject
+      - not trakt_watched: reject
+      - trakt_movie_user_rating and trakt_movie_user_rating <= 5: accept
+    list_match: # Check is already added to avoid notification noise 
+      from:
+        - entry_list: remove_movies_added
+      action: reject
+      remove_on_match: no
+      single_match: no
+    list_add:
+     - pending_list: remove_movies
+     - entry_list: remove_movies_added
+    notify:
+      entries:
+        title: '* To Remove Movies: {{movie_name|default(title)}} ({{movie_year|default("--")}})'
+        message: |
+          Task: {{task}}
+          Id: {{id|default(title)}}
+          Filename: {{filename}} 
+          Location: {{location}}
+          Rating: {{trakt_movie_user_rating}}
+          Collected: {{trakt_collected}}
+          Reason: {{reason|default("--")}}
+          Status: Pending approve
+        via:
+          - xmpp:
+              sender: '{? xmpp.sender ?}'
+              password: '{? xmpp.password ?}'
+              recipients: '{? xmpp.recipients ?}'
+
+  filter-duplicate-series:
+    priority: 15
+    seen: no # Too keep looking duplicates for same movie
+    metainfo_series: yes
+    parsing:
+      series: internal
+    filesystem:
+      path:
+        - '{? paths.series ?}'
+      regexp: '.*\.(avi|mkv|mp4)$'
+      recursive: yes
+    sequence:
+      - require_field:
+          - series_id
+          - series_name
+          - series_season
+          - series_episode
+      - sort_by: id
+      - duplicates:
+          field: id
+          action: accept
+      - set:
+          duplicate_reason: "{{reason}}"
+      - best_quality:
+          on_best: reject
+          on_lower: accept
+    list_add:
+      - entry_list: duplicate_series
+    notify:
+      entries:
+        title: '* Duplicate serie episode: {{series_name}} - {{series_id}}'
+        message: |
+          Task: {{task}}
+          Id: {{id|default(title)}}
+          Episode: {{series_id}}
+          Filename: {{filename}} 
+          Location: {{location}}
+          Reason: {{duplicate_reason|default(reason)}}
+          Status: approved
+        via:
+          - xmpp:
+              sender: '{? xmpp.sender ?}'
+              password: '{? xmpp.password ?}'
+              recipients: '{? xmpp.recipients ?}'
+
+  filter-reject-copy-series:
+    priority: 15
+    metainfo_series: yes
+    trakt_lookup: yes
+    parsing:
+      series: guessit
+    seen: no
+    accept_all: yes
+    from_digest:
+      list: purge_series
+    require_field:
+      - series_id
+      - series_name
+      - series_season
+    list_add:
+      - entry_list: exists_series
+    notify:
+      entries:
+        title: '* Reject copy episode: {{series_name}} - {{series_id}}'
+        message: |
+          Task: {{task}}
+          Id: {{id|default(title)}}
+          Episode: {{series_id}}
+          Filename: {{filename}} 
+          Location: {{location}}
+          Reason: {{reason|default('Unknow')}}
+          Status: approved
+        via:
+          - xmpp:
+              sender: '{? xmpp.sender ?}'
+              password: '{? xmpp.password ?}'
+              recipients: '{? xmpp.recipients ?}'
+              
+  # tasks to purge/clean (hard) per week or manual
+  purge-torrents-primary:
+    priority: 15
+    template:
+      - transmission-purge
+    from_transmission:
+      <<: *transmission-primary
+    if:
+      - transmission_ratio >= 4.0: accept
+      - transmission_progress == 100 and (transmission_date_done + timedelta(days=20)) < now: accept
+    transmission:
+      <<: *transmission-primary
+      action: purge
+      
+  purge-torrents-secondary:
+    priority: 15
+    template:
+      - transmission-purge
+    from_transmission:
+      <<: *transmission-secondary
+    if:
+      - transmission_ratio >= 4.0: accept
+      - transmission_progress == 100 and (transmission_date_done + timedelta(days=10)) < now: accept
+    transmission:
+      <<: *transmission-secondary
+      action: purge
+
+  purge-watchlist-movies:
+    manual: yes
+    seen: no
+    trakt_lookup: yes
+    filesystem:
+      path:
+        - '{? paths.movies ?}'
+      regexp: '.*\.(avi|mkv|mp4)$'
+      recursive: yes
+    list_match:
+      from:
+        - movie_list: watchlist_movies
+    require_field:
+      - movie_name
+      - movie_year
+    list_remove:
+      - movie_list: watchlist_movies
+      - trakt_list:
+          account: '{? accounts.trakt_primary.username ?}'
+          username: '{? accounts.trakt_primary.username ?}'
+          list: watchlist
+          type: movies
+      - trakt_list:
+          account: '{? accounts.trakt_secondary.username ?}'
+          username: '{? accounts.trakt_secondary.username ?}'
+          list: watchlist
+          type: movies
+
+  purge-watchlist-movies-spanish:
+    manual: yes
+    seen: no
+    trakt_lookup: yes
+    filesystem:
+      path:
+        - '{? paths.spanish_movies ?}'
+      regexp: '.*\.(avi|mkv|mp4)$'
+      recursive: yes
+    list_match:
+      from:
+        - movie_list: watchlist_movies_spanish
+        - movie_list: watchlist_movies_spanish_force
+    require_field:
+      - movie_name
+      - movie_year
+    list_remove:
+      - movie_list: watchlist_movies_spanish
+      - movie_list: watchlist_movies_spanish_force
+      - trakt_list:
+          account: '{? accounts.trakt_primary.username ?}'
+          username: '{? accounts.trakt_primary.username ?}'
+          list: spanish
+          type: movies
+      - trakt_list:
+          account: '{? accounts.trakt_secondary.username ?}'
+          username: '{? accounts.trakt_secondary.username ?}'
+          list: spanish
+          type: movies
+          
+  purge-exists-series:
+    manual: yes
+    seen: no
+    seen_info_hash: no
+    metainfo_series: yes
+    trakt_lookup: yes
+    parsing:
+      series: guessit
+    template:
+      - transmission-purge
+    from_transmission:
+      <<: *transmission-secondary
+    crossmatch:
+      from:
+        - entry_list: exists_series
+      fields:
+        - series_id
+        - series_name
+        - series_season
+      action: accept
+      all_fields: yes
+    transmission:
+      <<: *transmission-secondary
+      action: purge
+
+  # task to clean (soft) daily
+  clean-watchlist-movies-spanish:
+    priority: 20
+    seen: no
+    trakt_lookup: yes
+    from_digest:
+      list: clean_watchlist_spanish
+    accept_all: yes
+    crossmatch:
+      from:
+        - movie_list: watchlist_movies_spanish
+        - movie_list: watchlist_movies_spanish_force
+      fields:
+        - imdb_id
+      action: accept
+    require_field:
+      - imdb_id
+    list_remove:
+      - movie_list: watchlist_movies_spanish
+      - movie_list: watchlist_movies_spanish_force
+      - trakt_list:
+          account: '{? accounts.trakt_primary.username ?}'
+          username: '{? accounts.trakt_primary.username ?}'
+          list: spanish
+          type: movies
+      - trakt_list:
+          account: '{? accounts.trakt_secondary.username ?}'
+          username: '{? accounts.trakt_secondary.username ?}'
+          list: spanish
+          type: movies
+    
+  clean-remove-movies:
+    priority: 20
+    template:
+      - kodi-clean
+    seen: no
+    accept_all: yes
+    pending_list: remove_movies
+    list_match:
+      from:
+        - pending_list: remove_movies
+    list_remove:
+      - entry_list: remove_movies_added          
+    delete:
+      clean_source: 1
+      along:
+        extensions:
+          - sub
+          - srt
+        subdirs:
+          - Subs
+    notify:
+      entries:
+        title: '* Movie removed: {{movie_name|default(title)}} ({{movie_year|default("--")}})'
+        message: |
+          Task: {{task}}
+          Id: {{id|default(title)}}
+          Filename: {{filename}} 
+          Location: {{location}}
+        via:
+          - xmpp:
+              sender: '{? xmpp.sender ?}'
+              password: '{? xmpp.password ?}'
+              recipients: '{? xmpp.recipients ?}'
+
+  clean-duplicate-movies:
+    priority: 20
+    template:
+      - kodi-clean
+    seen: no
+    accept_all: yes
+    pending_list: duplicate_movies
+    unique: # ensure don't include duplicate items
+      field:
+        - id
+        - movie_name
+      action: reject
+    list_match:
+      from:
+        - pending_list: duplicate_movies
+    list_remove:
+      - entry_list: duplicate_movies_added
+    delete:
+      clean_source: 1
+      along:
+        extensions:
+          - sub
+          - srt
+        subdirs:
+          - Subs
+    notify:
+      entries:
+        title: '* Movie duplicate removed: {{movie_name|default(title)}} ({{movie_year|default("--")}})'
+        message: |
+          Id: {{id|default(title)}}
+          Filename: {{filename}} 
+          Location: {{location}}
+        via:
+          - xmpp:
+              sender: '{? xmpp.sender ?}'
+              password: '{? xmpp.password ?}'
+              recipients: '{? xmpp.recipients ?}'
+
+  clean-duplicate-series:
+    priority: 20
+    template:
+      - kodi-clean
+    seen: no
+    accept_all: yes
+    entry_list: duplicate_series
+    unique: # ensure don't include duplicate items
+      field:
+        - id
+      action: reject
+    list_match:
+      from:
+        - entry_list: duplicate_series
+    delete:
+      clean_source: 50
+      along:
+        extensions:
+          - sub
+          - srt
+        subdirs:
+          - Subs
+    notify:
+      entries:
+        title: '* Serie episode removed: {{series_name|default(title)}} - {{series_id|default(id)}}'
+        message: |
+          Id: {{id}}
+          Episode: {{series_id|default(id)}}
+          Filename: {{filename}} 
+          Location: {{location}}
+          Reason: {{duplicate_reason|default('Duplicated')}}
+        via:
+          - xmpp:
+              sender: '{? xmpp.sender ?}'
+              password: '{? xmpp.password ?}'
+              recipients: '{? xmpp.recipients ?}'
+      
+## schedules for daemon mode
+schedules:
+  - tasks: [watchlist-*, collection-*]
+    interval:
+      hours: 1
+  - tasks: [subtitles-get, copy-*, clean-*]
+    interval:
+      minutes: 30
+  - tasks: [watchlist-*, collection-*, download-*]
+    interval:
+      hours: 3
+  - tasks: [download-*]
+    schedule:
+      hour: 6,2
+  - tasks: [filter-*, purge-*]
+    schedule:
+      day_of_week: tue,fri
+      hour: 13
+
+web_server:
+  bind: 0.0.0.0
+  port: 3539
+  web_ui: yes
+  base_url: /

@@ -1,0 +1,54 @@
+paths:
+  root: '/srv/nfs/shared'
+  torrent: '/srv/nfs/shared/Torrents'
+  torrent_remote: '/var/lib/transmission-daemon/downloads'
+  movies: '/srv/nfs/shared/Movies'
+  series: '/srv/nfs/shared/TV Shows'
+  general_movies: '/srv/nfs/shared/Movies/General'
+  general_series: '/srv/nfs/shared/TV Shows/General'
+  spanish_movies: '/srv/nfs/shared/Movies/Spanish'
+  spanish_series: '/srv/nfs/shared/TV Shows/Spanish'
+  anime_movies: '/srv/nfs/shared/Movies/Anime'
+  anime_series: '/srv/nfs/shared/TV Shows/Anime'
+torrent:
+  primary:
+    host: shared
+    port: 9091
+    username: '-------'
+    password: '-------'
+  secondary:
+    host: vps
+    port: 443
+    username: '-------'
+    password: '-------'
+xmpp:
+  sender: '-------'
+  password: '------'
+  recipients: '-------'
+telegram:
+  token: '-----'
+  recipients:
+    username: '-------'
+accounts:
+  torrentleech:
+    key: '-------'
+    username: '-------'
+    password: '-------'
+  trakt_primary:
+    username: '-------'
+  trakt_secondary:
+    username: '-------'
+  myanimelist:
+    username: '-------'
+  kitsu_primary:
+    username: '-------'
+  anidb_primary:
+    username : '-------'
+  opensubtitles:
+    username: '-------'
+    password: '-------'
+kodi:
+  url: 'http://192.168.0.6'
+  port: 8080
+  username: '-------'
+  password: '-------'

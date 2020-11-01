@@ -1,0 +1,9 @@
+series:
+  - Saishuu Heiki Kanojo:
+      alternate_name:
+        - Saikano
+      identified_by: sequence
+      exact: yes
+  - Death Note:
+      identified_by: sequence
+      exact: yes
