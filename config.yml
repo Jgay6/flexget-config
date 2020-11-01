@@ -248,7 +248,7 @@ tasks:
     list_add:
       - movie_list: watchlist_movies
 
-  # taska to pull movies from trakt.tv and add to the movie list
+  # task to pull movies from trakt.tv and add to the movie list
   watchlist-movies:
     priority: 1
     inputs:
