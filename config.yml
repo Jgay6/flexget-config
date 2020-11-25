@@ -40,19 +40,24 @@ templates:
       reject_excluding:
         - /+(downloads|Torrents)/+(anime|movies|series)
       from: transmission_downloadDir
-  common-reject:
+  language-reject:
     regexp:
       reject:
         - \b(ita|ger|spa|swe|nor|nordic|kor|esp|nl|pl|french|casteñano|spanish|hindi)\b # Languages
         - \b(un|hard)sub|sub(bed|titulado)\b # Subtitles (hardsub / Subbed / Subtitulado / Unsubbed) allow Subs|Sub
         - \b(dub|_dub|dubbed)\b
-        - \b60fps\b
-        - \bpv\b
         - \bdublat\n
         - \bVOSTFR\b
+      from: title
+  common-reject:
+    regexp:
+      reject:
+        - \b60fps\b
+        - \bpv\b
         - \bHC\b
         - 1XBET
-        - PCTRELOAD
+        - \bpctreload\b
+        - \bpctmix\b
         - ganool
       from: title
   common-sort:
@@ -566,6 +571,7 @@ tasks:
       - common-sort
       - common-filter
       - common-reject
+      - language-reject
       - common-urlrewrite
       - download-movies
       - transmission-movies
@@ -619,6 +625,7 @@ tasks:
       - common-sort
       - common-filter
       - common-reject
+      - language-reject
       - common-urlrewrite
       - download-movies
       - transmission-movies
@@ -699,6 +706,7 @@ tasks:
       - lookup-movies
       - common-sort
       - common-filter
+      - common-reject
       - common-urlrewrite
       - download-movies
       - transmission-movies
@@ -763,13 +771,6 @@ tasks:
     regexp:
       reject_excluding:
         - .lat|-lat-|latino|latin|dual-lat|dual.lat|dual-latino|spa-lat|spa-latino|spanish-latino|esp-lat|esp-latino|esp.lat|spa.lat
-      reject:
-        - \bdublat\n
-        - \bVOSTFR\b
-        - \bHC\b
-        - 1XBET
-        - PCTRELOAD
-        - ganool
       from:
         - title
     list_match:
@@ -804,6 +805,7 @@ tasks:
       - common-sort
       - common-filter
       - common-reject
+      - language-reject
       - common-urlrewrite
       - notify-all
     trakt_lookup: yes
@@ -822,13 +824,13 @@ tasks:
         - 1337x:
             order_by: seeders
         - rarbg:
-            category: 
+            category:
               - x264 720p
               - HDTV
               - SDTV
             sorted_by: seeders
         # - rarbg:
-        #     category: 
+        #     category:
         #       - x264 720p
         #       - HDTV
         #       - SDTV
@@ -892,6 +894,7 @@ tasks:
       - common-sort
       - common-filter
       - common-reject
+      - language-reject
       - common-urlrewrite
       - manipulate-anime
       - notify-all
@@ -933,7 +936,7 @@ tasks:
         - dublat
         - \bVOSTFR\b
         - 1XBET
-        - ganool  
+        - ganool
       from: title
     content_size:
       min: 20
@@ -947,7 +950,7 @@ tasks:
         sequence_regexp: '(\d{2,3})(?:v(?P<version>\d))?'
         timeframe: 72 hours
         target: hr-720p hdtv+ !h265 !10bit !dts !dtshd
-        qualities: 
+        qualities:
           - dvdrip !h265 !10bit !dts !dtshd
           - 480p-720p webrip+ !h265 !10bit <=flac
           - 480p-720p !cam !ts !bdscr !dvdscr !h265 !10bit !dts !dtshd
@@ -1004,7 +1007,7 @@ tasks:
           languages:
             - es
             - en
-        
+
   subtitles-get:
     priority: 1
     seen: no
@@ -1058,7 +1061,7 @@ tasks:
       - best_quality:
           on_best: reject
           on_lower: accept
-    list_match: # Check is already added to avoid notification noise 
+    list_match: # Check is already added to avoid notification noise
       from:
         - entry_list: duplicate_movies_added
       action: reject
@@ -1073,7 +1076,7 @@ tasks:
         message: |
           Task: {{task}}
           Id: {{id|default(title)}}
-          Filename: {{filename}} 
+          Filename: {{filename}}
           Location: {{location}}
           Reason: {{duplicate_reason|default(reason)}}
           Status: Pending approve
@@ -1103,7 +1106,7 @@ tasks:
       - trakt_collected: reject
       - not trakt_watched: reject
       - trakt_movie_user_rating and trakt_movie_user_rating <= 5: accept
-    list_match: # Check is already added to avoid notification noise 
+    list_match: # Check is already added to avoid notification noise
       from:
         - entry_list: remove_movies_added
       action: reject
@@ -1118,7 +1121,7 @@ tasks:
         message: |
           Task: {{task}}
           Id: {{id|default(title)}}
-          Filename: {{filename}} 
+          Filename: {{filename}}
           Location: {{location}}
           Rating: {{trakt_movie_user_rating}}
           Collected: {{trakt_collected}}
@@ -1165,7 +1168,7 @@ tasks:
           Task: {{task}}
           Id: {{id|default(title)}}
           Episode: {{series_id}}
-          Filename: {{filename}} 
+          Filename: {{filename}}
           Location: {{location}}
           Reason: {{duplicate_reason|default(reason)}}
           Status: approved
@@ -1198,7 +1201,7 @@ tasks:
           Task: {{task}}
           Id: {{id|default(title)}}
           Episode: {{series_id}}
-          Filename: {{filename}} 
+          Filename: {{filename}}
           Location: {{location}}
           Reason: {{reason|default('Unknow')}}
           Status: approved
@@ -1207,7 +1210,7 @@ tasks:
               sender: '{? xmpp.sender ?}'
               password: '{? xmpp.password ?}'
               recipients: '{? xmpp.recipients ?}'
-              
+
   # tasks to purge/clean (hard) per week or manual
   purge-torrents-primary:
     priority: 15
@@ -1221,7 +1224,7 @@ tasks:
     transmission:
       <<: *transmission-primary
       action: purge
-      
+
   purge-torrents-secondary:
     priority: 15
     template:
@@ -1292,7 +1295,7 @@ tasks:
           username: '{? accounts.trakt_secondary.username ?}'
           list: spanish
           type: movies
-          
+
   purge-exists-series:
     manual: yes
     seen: no
@@ -1348,7 +1351,7 @@ tasks:
           username: '{? accounts.trakt_secondary.username ?}'
           list: spanish
           type: movies
-    
+
   clean-remove-movies:
     priority: 20
     template:
@@ -1360,7 +1363,7 @@ tasks:
       from:
         - pending_list: remove_movies
     list_remove:
-      - entry_list: remove_movies_added          
+      - entry_list: remove_movies_added
     delete:
       clean_source: 1
       along:
@@ -1375,7 +1378,7 @@ tasks:
         message: |
           Task: {{task}}
           Id: {{id|default(title)}}
-          Filename: {{filename}} 
+          Filename: {{filename}}
           Location: {{location}}
         via:
           - xmpp:
@@ -1413,7 +1416,7 @@ tasks:
         title: '* Movie duplicate removed: {{movie_name|default(title)}} ({{movie_year|default("--")}})'
         message: |
           Id: {{id|default(title)}}
-          Filename: {{filename}} 
+          Filename: {{filename}}
           Location: {{location}}
         via:
           - xmpp:
@@ -1449,7 +1452,7 @@ tasks:
         message: |
           Id: {{id}}
           Episode: {{series_id|default(id)}}
-          Filename: {{filename}} 
+          Filename: {{filename}}
           Location: {{location}}
           Reason: {{duplicate_reason|default('Duplicated')}}
         via:
@@ -1457,7 +1460,7 @@ tasks:
               sender: '{? xmpp.sender ?}'
               password: '{? xmpp.password ?}'
               recipients: '{? xmpp.recipients ?}'
-      
+
 ## schedules for daemon mode
 schedules:
   - tasks: [watchlist-*, collection-*]
