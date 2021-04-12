@@ -3,3 +3,8 @@ converted
 received
 cached_resources
 *.sqlite
+
+# templates
+anime.yml
+series.yml
+variables.yml
