@@ -99,6 +99,7 @@ templates:
       min: 275
     if:
       - "movie_name is undefined or movie_name is none": fail
+      - "movie_year is undefined or movie_year is none": fail
       - "'spanish' in location":
           set:
             category: "spanish"
@@ -151,7 +152,7 @@ templates:
     manipulate:
       - title:
           replace:
-            regexp: '[^a-zA-Z0-9\-~_.()\[\]\s]' # remove kanji to better parsing
+            regexp: '[^a-zA-Z0-9\-~_.()\[\]\s]' # remove katakana or similar to better parsing
             format: ''
       - title:
           replace:
@@ -195,6 +196,7 @@ templates:
           *Title:* {{title}}
           {%- endif %}
           *Quality:* {{quality|d('')}}
+          *Language:* {{category|d('English')}}
           {%- if trakt_rating is defined and trakt_rating %}
           *Score trakt:* {{trakt_rating}}/10 - {{trakt_votes|d('-')}} votes
           {%- endif %}
@@ -416,6 +418,47 @@ tasks:
     list_add:
       - entry_list: watchlist_series_spanish
 
+  # collect next movies to download
+  # with a primitive queue
+  collect-movies:
+    manual: yes
+    priority: 1
+    seen: no
+    accept_all: yes
+    movie_list: watchlist_movies
+    limit_new: 20
+    sort_by:
+      - field: added
+        reverse: no
+    list_add: # update added date to send it to last position
+      - movie_list: watchlist_movies
+
+  collect-movies-spanish:
+    manual: yes
+    priority: 1
+    seen: no
+    accept_all: yes
+    movie_list: watchlist_movies_spanish
+    limit_new: 20
+    sort_by:
+      - field: added
+        reverse: no
+    list_add: # update added date to send it to last position
+      - movie_list: watchlist_movies_spanish
+
+  collect-movies-spanish-force:
+    manual: yes
+    priority: 1
+    seen: no
+    accept_all: yes
+    movie_list: watchlist_movies_spanish_force
+    limit_new: 20
+    sort_by:
+      - field: added
+        reverse: no
+    list_add: # update added date to send it to last position
+      - movie_list: watchlist_movies_spanish_force
+
   # task to copy finished movies
   copy-movies:
     priority: 2
@@ -423,6 +466,7 @@ tasks:
       - lookup-movies
       - copy-movies
       - subtitles-movies
+      - notify-all
       - kodi-update
     metainfo_movie: yes
     accept_all: yes
@@ -441,20 +485,69 @@ tasks:
   copy-movies-fallback:
     priority: 3
     template:
+      - lookup-movies
       - copy-movies
       - subtitles-movies
+      - notify-all
       - kodi-update
-    metainfo_movie: yes
-    trakt_lookup: yes
-    imdb_lookup: yes
-    tmdb_lookup: yes
-    parsing:
-      movie: internal
+    metainfo_movie: no
+    manipulate:
+      - imdb_id:
+          remove: yes
+      - imdb_name:
+          remove: yes
+      - imdb_year:
+          remove: yes
+      - imdb_url:
+          remove: yes
+      - trakt_movie_id:
+          remove: yes
+      - trakt_movie_name:
+          remove: yes
+      - tmdb_id:
+          remove: yes
+      - movie_year:
+          remove: yes
+      - movie_name:
+          remove: yes
+      # - movie_year:
+      #     from: title
+      #     extract: \((\d+)\)
+      # - movie_name:
+      #     from: title
+      #     extract: (.*)\(\d+\)
+      - title:
+          replace:
+            regexp: '[\-~_\s]'
+            format: ' '
+      - title:
+          replace:
+            regexp: '[\[\]]'
+            format: '.'
     retry_failed: no
-    from_digest:
-      list: copy_movies_fallback
     accept_all: yes
     seen: local
+    require_field:
+      - movie_name
+      - movie_year
+    from_digest:
+      list: copy_movies_fallback
+    sequence:
+      - notify:
+          entries:
+            what: failed
+            title: '* Failed Copy Movie: {{movie_name|default(title)}} ({{movie_year|default("--")}})'
+            message: |
+              Task: {{task}}
+              Id: {{id|default(title)}}
+              Filename: {{filename}}
+              Location: {{location}}
+              Reason: {{reason|default("")}}
+            via:
+              - xmpp:
+                  sender: '{? xmpp.sender ?}'
+                  password: '{? xmpp.password ?}'
+                  recipients: '{? xmpp.recipients ?}'
 
   # task to copy finished series
   copy-series:
@@ -575,10 +668,9 @@ tasks:
       - common-urlrewrite
       - download-movies
       - transmission-movies
-      - notify-all
     discover:
       what:
-        - movie_list: watchlist_movies
+        - from_task: collect-movies
       from:
         - 1337x:
             order_by: seeders
@@ -600,9 +692,9 @@ tasks:
         #    password: '{? accounts.torrentleech.password ?}'
       interval: 2 hours
       release_estimations: ignore
-    best_quality:
-      on_best: do_nothing
-      on_lower: reject
+    # best_quality:
+    #   on_best: do_nothing
+    #   on_lower: reject
     quality: hr-720p webrip+ !h265 !10bit !dts !dtshd
     upgrade:
       target: 720p webdl+ !h265 !10bit !dts !dtshd
@@ -616,8 +708,10 @@ tasks:
     require_field:
       - movie_name
       - movie_year
-    list_add:
-      - entry_list: downloaded_movies
+    digest:
+      list: clean_watchlist
+      state:
+        - accepted
 
   download-movies-anime:
     priority: 10
@@ -629,7 +723,6 @@ tasks:
       - common-urlrewrite
       - download-movies
       - transmission-movies
-      - notify-all
     trakt_lookup: yes
     imdb_lookup: yes
     tmdb_lookup: yes
@@ -641,7 +734,7 @@ tasks:
       what:
         - movie_list:
             list_name: watchlist_movies_anime
-            strip_year: yes
+            strip_year: no
       from:
         - horriblesubs: yes
         - nyaa:
@@ -665,7 +758,7 @@ tasks:
     manipulate:
       - title:
           replace:
-            regexp: '[^a-zA-Z0-9\-_.()\[\]\s]' # remove kanji
+            regexp: '[^a-zA-Z0-9\-_.()\[\]\s]' # remove katakana or similar
             format: ''
     best_quality:
       on_best: do_nothing
@@ -691,13 +784,10 @@ tasks:
       - movie_year
     set:
       path: '{? paths.torrent ?}/movies/anime'
-    list_add:
-      - entry_list: downloaded_movies
-    list_remove:
-      - trakt_list:
-          username: '{? accounts.trakt_primary.username ?}'
-          list: anime
-          type: movies
+    digest:
+      list: clean_watchlist_anime
+      state:
+        - accepted
 
   # task that automatically downloads movies in spanish
   download-movies-spanish:
@@ -710,18 +800,17 @@ tasks:
       - common-urlrewrite
       - download-movies
       - transmission-movies
-      - notify-all
     discover:
       what:
-        - movie_list: watchlist_movies_spanish
-        - movie_list: watchlist_movies_spanish_force
+        - from_task: collect-movies-spanish
+        - from_task: collect-movies-spanish-force
       from:
-        - torrentz:
-           reputation: good
-           extra_terms: lat
-        - torrentz:
-            reputation: good
-            extra_terms: latino
+        # - torrentz:
+        #    reputation: good
+        #    extra_terms: lat
+        # - torrentz:
+        #     reputation: good
+        #     extra_terms: latino
         - argenteam:
             force_subtitles: no
         #- torrentleech:
@@ -759,9 +848,9 @@ tasks:
       - dvdrip+ !h265 !10bit !dts !dtshd
       - 480p-1080p !hdrip !cam !ts !bdscr !dvdscr !h265 !10bit !dts !dtshd
       - 720p+ webrip+ !h265 !10bit !dts !dtshd
-    best_quality:
-      on_best: do_nothing
-      on_lower: reject
+    # best_quality:
+    #   on_best: do_nothing
+    #   on_lower: reject
     upgrade:
       target: 1080p webdl+ !h265 !10bit !dts !dtshd
       tracking: yes
@@ -769,6 +858,8 @@ tasks:
       on_lower: reject
       propers: yes
     regexp:
+      accept:
+        - \bcinecalidad\b
       reject_excluding:
         - .lat|-lat-|latino|latin|dual-lat|dual.lat|dual-latino|spa-lat|spa-latino|spanish-latino|esp-lat|esp-latino|esp.lat|spa.lat
       from:
@@ -786,17 +877,6 @@ tasks:
       list: clean_watchlist_spanish
       state:
         - accepted
-    list_add:
-      - entry_list: downloaded_movies
-    list_remove:
-      - trakt_list:
-          username: '{? accounts.trakt_secondary.username ?}'
-          list: spanish
-          type: movies
-      - trakt_list:
-          username: '{? accounts.trakt_primary.username ?}'
-          list: spanish
-          type: movies
 
   # task that automatically downloads series from the entry_list
   download-series:
@@ -847,7 +927,6 @@ tasks:
             category: tv
             order_by: seeds
       interval: 2 hours
-      #release_estimations: ignore
       release_estimations:
         optimistic: 90 days
     torrent_alive: 4 # Will reject results with less than 2 seeds
@@ -1241,7 +1320,9 @@ tasks:
   purge-watchlist-movies:
     manual: yes
     seen: no
-    trakt_lookup: yes
+    template:
+      - lookup-movies
+    metainfo_movie: yes
     filesystem:
       path:
         - '{? paths.movies ?}'
@@ -1269,7 +1350,9 @@ tasks:
   purge-watchlist-movies-spanish:
     manual: yes
     seen: no
-    trakt_lookup: yes
+    template:
+      - lookup-movies
+    metainfo_movie: yes
     filesystem:
       path:
         - '{? paths.spanish_movies ?}'
@@ -1322,6 +1405,57 @@ tasks:
       action: purge
 
   # task to clean (soft) daily
+  clean-watchlist-movies:
+    priority: 20
+    seen: no
+    trakt_lookup: yes
+    from_digest:
+      list: clean_watchlist
+    accept_all: yes
+    crossmatch:
+      from:
+        - movie_list: watchlist_movies
+      fields:
+        - imdb_id
+      action: accept
+    require_field:
+      - imdb_id
+    list_remove:
+      - movie_list: watchlist_movies
+      - trakt_list:
+          account: '{? accounts.trakt_primary.username ?}'
+          username: '{? accounts.trakt_primary.username ?}'
+          list: watchlist
+          type: movies
+      - trakt_list:
+          account: '{? accounts.trakt_secondary.username ?}'
+          username: '{? accounts.trakt_secondary.username ?}'
+          list: watchlist
+          type: movies
+
+  clean-watchlist-movies-anime:
+    priority: 20
+    seen: no
+    trakt_lookup: yes
+    from_digest:
+      list: clean_watchlist_anime
+    accept_all: yes
+    crossmatch:
+      from:
+        - movie_list: watchlist_movies_anime
+      fields:
+        - imdb_id
+      action: accept
+    require_field:
+      - imdb_id
+    list_remove:
+      - movie_list: watchlist_movies_anime
+      - trakt_list:
+          account: '{? accounts.trakt_primary.username ?}'
+          username: '{? accounts.trakt_primary.username ?}'
+          list: anime
+          type: movies
+
   clean-watchlist-movies-spanish:
     priority: 20
     seen: no
