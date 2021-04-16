@@ -82,9 +82,9 @@ templates:
       #torrentz2:
       #  regexp: 'https?://torrentz2.eu/(?P<id>\w+)'
       #  format: 'magnet:?xt=urn:btih:\g<id>'
-      itorrents:
-        regexp: 'https?://itorrents.org/torrent/(?P<id>\w+)\.torrent.*'
-        format: 'magnet:?xt=urn:btih:\g<id>'
+      # itorrents:
+      #   regexp: 'https?://itorrents.org/torrent/(?P<id>\w+)\.torrent.*'
+      #   format: 'magnet:?xt=urn:btih:\g<id>'
       torrentdownload:
         regexp: 'https?://www.torrentdownload.info/.*/(?P<id>\w+)'
         format: 'magnet:?xt=urn:btih:\g<id>'
@@ -196,7 +196,7 @@ templates:
           *Title:* {{title}}
           {%- endif %}
           *Quality:* {{quality|d('')}}
-          *Language:* {{category|d('English')}}
+          *Language:* {{category|d('english')|capitalize}}
           {%- if trakt_rating is defined and trakt_rating %}
           *Score trakt:* {{trakt_rating}}/10 - {{trakt_votes|d('-')}} votes
           {%- endif %}
@@ -491,6 +491,8 @@ tasks:
       - notify-all
       - kodi-update
     metainfo_movie: no
+    parsing:
+      movie: internal
     manipulate:
       - imdb_id:
           remove: yes
@@ -530,6 +532,11 @@ tasks:
     require_field:
       - movie_name
       - movie_year
+    unique:
+      field:
+        - id
+        - title
+      action: reject
     from_digest:
       list: copy_movies_fallback
     sequence:
@@ -1584,8 +1591,8 @@ tasks:
       entries:
         title: '* Serie episode removed: {{series_name|default(title)}} - {{series_id|default(id)}}'
         message: |
-          Id: {{id}}
-          Episode: {{series_id|default(id)}}
+          Id: {{id|default(title)}}
+          Episode: {{series_id|default(title)}}
           Filename: {{filename}}
           Location: {{location}}
           Reason: {{duplicate_reason|default('Duplicated')}}
